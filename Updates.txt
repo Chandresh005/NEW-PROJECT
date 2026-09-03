@@ -1,0 +1,13 @@
+MeteroLens Feature Updates
+
+1. AI OCR Integration: Integrated EasyOCR to extract text directly from uploaded product packaging images.
+2. Compliance Rule Engine: Built a validation system to parse OCR text against FSSAI packaging rules (checks for MRP, Manufacturer details, Net Weight, and Best Before dates).
+3. Image Evidence Hosting: Implemented a static endpoint to serve processed image uploads so that historical scans can be viewed directly on the Dashboard.
+4. E-commerce Mismatch Detection: Added logic to cross-check extracted physical packaging details against provided e-commerce listing URLs for discrepancies.
+5. Canvas-Based Image Processing: Added an OpenCV.js canvas rendering pipeline in the frontend to securely handle image uploads before sending them to the AI model.
+6. Role-Based Access Control Expansion: Upgraded the Dashboard and History panels to fully support the "viewer" account role, allowing non-admin personnel to view compliance metrics.
+7. Advanced AI Data Extraction: Expanded the Gemini AI vision pipeline to accurately extract complex fields like Manufacturing Date, Unit Sale Price, Batch Number, and Address from unstructured packaging labels.
+8. Hybrid Semantic Rule Engine: Upgraded the compliance validation system by integrating Groq (LLaMA 3). The rule engine now uses AI to semantically judge complex rules like misleading marketing claims and tax inclusion statements, rather than relying solely on rigid text matching.
+9. Bilingual/Script Compliance (USP 2): Integrated a Groq-powered mistranslation detector to cross-check English and Hindi (Devanagari) declarations on packaging to ensure semantic consistency per Rule 8.
+10. Court-Admissible Evidence (USP 3): Upgraded evidence generation to include a cryptographic SHA-256 hash at capture time, packaged into an automatically generated Section 65B(4) / Section 63 BSA legal certificate appended to PDF compliance reports.
+11. Cloud Storage Migration: Replaced the local static image hosting with a fully integrated Cloudinary pipeline to permanently host compliance evidence on secure, scalable cloud storage.

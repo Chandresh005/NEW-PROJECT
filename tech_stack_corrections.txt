@@ -1,0 +1,81 @@
+# Problem Statement: SIH26034
+**Title:** Software System to check compliance of Packaged Commodities under Legal Metrology (Packaged Commodities) Rules, 2011
+**Sponsoring Ministry:** Ministry of Consumer Affairs, Food & Public Distribution
+**Objective:** To develop a system that checks the compliance of packaged commodities with legal metrology rules by scanning products, images, and labels.
+
+# Solution Developed Till Now (MeteroLens)
+We have developed a comprehensive, full-stack, hybrid AI-powered platform called **MeteroLens**. 
+
+Key capabilities developed so far include:
+1. **Intelligent Data Extraction (Multimodal & CV):** Utilizes Gemini 2.5 Flash and PaddleOCR (Multilingual) to perform OCR and extract structured information (MRP, Manufacturer details, Net Weight, Dates, etc.) directly from uploaded product packaging images.
+2. **Physical Dimension Calibration (Computer Vision):** Uses OpenCV (Canny Edge Detection and contours) to find a standard credit card reference in the image to precisely calculate pixels-per-mm, allowing accurate physical font height measurements.
+3. **Automated Image Stitching:** Handles multiple angles of product packaging by seamlessly stitching uploaded images into a single panoramic view using PIL before sending it to the AI pipeline.
+4. **Hybrid Compliance Rule Engine:** Validates extracted data against Legal Metrology packaging rules using a mix of deterministic checks (Regex, font-height bounding) and a Semantic LLM Judge (Groq LLaMA 3) for ambiguous claims.
+5. **Citizen Crowdsourcing & Risk Queue:** A dedicated public reporting portal for consumers. It automatically captures GPS locations and flags non-compliant uploads into a prioritized "Risk Queue" on the inspector's dashboard.
+6. **GTIN/Barcode Risk Scoring:** A historical analytics engine that tracks compliance failures by product GTIN (barcode) and automatically assigns a Risk Tier (High/Medium/Low) based on past violations.
+7. **Bilingual Consistency Checker (USP):** An AI-powered pipeline to cross-check English and Hindi (Devanagari) declarations on the packaging to ensure semantic consistency and prevent mistranslation.
+8. **Evidence Integrity & Legal Reporting (USP):** Secures captured image evidence using SHA-256 cryptographic hashing at capture time. Automatically generates a court-admissible PDF compliance report (Section 65B(4) / Section 63 BSA certificate). 
+9. **E-commerce Mismatch Detection:** Implemented logic to cross-check physical packaging details against provided e-commerce listing URLs to detect discrepancies.
+10. **Role-Based Dashboard Analytics:** A React-based web dashboard featuring trend graphs, compliance ratios, and geographic mapping. Supports Role-Based Access Control (RBAC) to monitor metrics.
+
+---
+
+Corrected Technology Stack for MeteroLens (Actual Implementation)
+Please use this comprehensive list to update the presentation slide. It reflects exactly what is currently implemented in the codebase.
+
+1. Capture App & Frontend (User Interface)
+- Core Framework: React.js (v18) (Responsive Web App, no React Native)
+- Styling: Tailwind CSS
+- Dashboard Analytics: Recharts (for trend graphs)
+- Map Visualization: react-simple-maps (for geographic plotting of scans)
+- Web Scanner: html5-qrcode (for browser-based QR/Barcode scanning if used)
+- Citizen Reporting: HTML5 Geolocation API (silently captures coordinates)
+
+2. Backend Framework & Authentication
+- Core Framework: Flask (v3.0.3, Python) with modular Flask Blueprints
+- Authentication: JWT-based Role Authentication (Flask-JWT-Extended)
+- Password Hashing: bcrypt
+- Serialization: Marshmallow
+
+3. Database & Storage
+- Relational Database: PostgreSQL (via psycopg2-binary) managed with Flask-SQLAlchemy and Flask-Migrate
+- Image Evidence Storage: Local File System (`UPLOAD_FOLDER`) + Cloudinary API (No MinIO/S3 used)
+
+4. AI Label Detection, OCR, & NLP (Hybrid Pipeline)
+- Primary AI Engine (Vision + NLP): Gemini 2.5 Flash (via google-generativeai). Handles multimodal label text extraction (OCR) and structured JSON field mapping simultaneously.
+- Fallback OCR Engine: PaddleOCR (Multilingual English + Hindi) 
+- Image Pre-processing: OpenCV (cv2) + Pillow for denoising, contrast enhancement, and contour analysis (calibrating physical font height using a reference card).
+
+5. Compliance Rule Engine (Hybrid Deterministic + LLM)
+- Deterministic Validation: Python-based script (`validate_compliance`) executing Regex pattern matching and physical font-height bounds checking against versioned JSON rules.
+- LLM Judge (Semantic Verification): Groq API (llama3-8b-8192) evaluates ambiguous rules semantically (acting as an LLM judge returning PASS/FAIL).
+- Bilingual/Script Compliance Detector: Groq API (llama-3.3-70b-versatile) cross-checks English vs. Hindi (Devanagari) to detect mistranslations and inconsistencies.
+
+6. Product Identity & Cross-Check
+- Validation Service: Web scraping simulation / Mock matching service in `mismatch_service.py` (No actual GS1 DataKart API integration; uses predefined test URLs).
+
+7. Reporting & Evidence Non-Repudiation
+- PDF Generation: ReportLab (Python) for automated compliance certificate generation.
+- Evidence Integrity: SHA-256 Cryptographic Hashing applied to image evidence at the time of capture for non-repudiation in the legal report.
+
+---
+
+# Future Roadmap & Planned Capabilities
+
+While the current system establishes a robust foundation for automated compliance checking, we have planned several advanced capabilities to scale the platform and address unsolved, real-world Legal Metrology challenges for SIH26034.
+
+## 1. Automated Nodal Officer Routing & Escalation (Civic Tech Integration)
+- **Concept:** Transition from a passive dashboard to an active grievance redressal engine.
+- **Implementation:** Implement geospatial mapping that automatically identifies the jurisdiction of a non-compliant scan and routes a formalized complaint (along with the Section 65B PDF evidence) directly to the relevant State Controller or Nodal Officer via email or secure API. Includes an automated escalation matrix if no action is taken.
+
+## 2. Dedicated Object Detection Training (YOLOv8)
+- **Concept:** Move beyond generalized OCR to precise geometrical validation of the label.
+- **Implementation:** Train a custom YOLOv8 (or similar) object detection model specifically on Indian product packaging. This model will accurately detect the bounding boxes of mandatory declarations to strictly calculate length, breadth, surface area, and physical font sizes down to the millimeter. This ensures 100% adherence to the stringent dimensional requirements of the Legal Metrology (Packaged Commodities) Rules.
+
+## 3. Interactive AI Assistant (Chat Bubble)
+- **Concept:** Provide on-the-fly, contextual guidance and workflows to users (similar to e-commerce support bubbles).
+- **Implementation:** Deploy an embedded, fine-tuned conversational AI assistant. If an inspector or citizen is unsure why a product failed compliance, the chatbot can interactively explain the specific rule violation in layman's terms, suggest further legal actions (e.g., "Draft a show-cause notice", "Forward to Central Authority"), and guide the user through the resolution workflow.
+
+## 4. Tackling Unsolved Real-World Problems (SIH26034 Edge Cases)
+- **"Dark Patterns" in Packaging Detection:** Train models to detect deceptive packaging practices that technically follow the rules but mislead consumers (e.g., hiding the MRP under folds, using text colors that intentionally blend with the background, or obscured "shrinkflation" metric changes).
+- **Counterfeit & Phantom Manufacturer Detection:** Integrate deep cross-referencing to check if the manufacturer address actually exists using mapping APIs, and verify the GS1 GTIN/Barcode to catch unregistered or counterfeit products alongside standard compliance failures.
