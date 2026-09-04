@@ -1,62 +1,84 @@
-from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required, get_jwt_identity
-from app import db
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+
+from app.auth import get_current_user
+from app.database import get_db
 from app.models import User, Scan
 
-history_bp = Blueprint("history", __name__)
+router = APIRouter(
+    prefix="/api/history",
+    tags=["History"],
+)
 
 
-@history_bp.route("", methods=["GET"])
-@jwt_required()
-def get_history():
+@router.get("")
+@router.get("/")
+def get_history(
+    page: int = 1,
+    per_page: int = 20,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     try:
-        user_id = int(get_jwt_identity())
-        user = User.query.get(user_id)
-        if not user:
-            return jsonify({"error": "User not found"}), 404
+        page = max(page, 1)
+        per_page = min(max(per_page, 1), 100)
 
-        page = request.args.get("page", 1, type=int)
-        per_page = request.args.get("per_page", 20, type=int)
-        per_page = min(per_page, 100)
+        query = (
+            db.query(Scan)
+            .filter(Scan.user_id == current_user.id)
+            .order_by(Scan.created_at.desc())
+        )
+        total_items = query.count()
+        total_pages = (total_items + per_page - 1) // per_page if total_items > 0 else 1
+        items = query.offset((page - 1) * per_page).limit(per_page).all()
 
-        query = Scan.query.filter_by(user_id=user_id).order_by(Scan.created_at.desc())
-        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
-
-        return jsonify({
-            "scans": [s.to_dict() for s in pagination.items],
+        return {
+            "scans": [s.to_dict() for s in items],
             "pagination": {
-                "page": pagination.page,
-                "per_page": pagination.per_page,
-                "total_pages": pagination.pages,
-                "total_items": pagination.total,
-            }
-        }), 200
+                "page": page,
+                "per_page": per_page,
+                "total_pages": total_pages,
+                "total_items": total_items,
+            },
+        }
 
     except Exception as e:
-        return jsonify({"error": f"Failed to fetch history: {str(e)}"}), 500
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch history: {str(e)}",
+        )
 
 
-@history_bp.route("/<int:scan_id>", methods=["DELETE"])
-@jwt_required()
-def delete_scan(scan_id):
+@router.delete("/{scan_id}")
+def delete_scan(
+    scan_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     try:
-        user_id = int(get_jwt_identity())
-        user = User.query.get(user_id)
-        if not user:
-            return jsonify({"error": "User not found"}), 404
-
-        scan = Scan.query.get(scan_id)
+        scan = db.get(Scan, scan_id)
         if not scan:
-            return jsonify({"error": "Scan not found"}), 404
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Scan not found",
+            )
 
-        if scan.user_id != user_id and user.role != "admin":
-            return jsonify({"error": "Access denied. You can only delete your own scans."}), 403
+        if scan.user_id != current_user.id and current_user.role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied. You can only delete your own scans.",
+            )
 
-        db.session.delete(scan)
-        db.session.commit()
+        db.delete(scan)
+        db.commit()
 
-        return jsonify({"message": "Scan deleted successfully"}), 200
+        return {"message": "Scan deleted successfully"}
 
+    except HTTPException:
+        raise
     except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": f"Failed to delete scan: {str(e)}"}), 500
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete scan: {str(e)}",
+        )

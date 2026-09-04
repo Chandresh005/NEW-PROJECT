@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
@@ -6,10 +7,12 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 
 load_dotenv()
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "sqlite:///./compliScan.db"
-)
+BASE_BACKEND_DIR = Path(__file__).resolve().parent.parent
+default_db_path = BASE_BACKEND_DIR / "compliScan.db"
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL or DATABASE_URL in ("sqlite:///./compliScan.db", "sqlite:///compliScan.db"):
+    DATABASE_URL = f"sqlite:///{default_db_path.as_posix()}"
 
 connect_args = {}
 

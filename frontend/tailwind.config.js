@@ -6,10 +6,38 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        heading: ['"Space Grotesk"', 'system-ui', 'sans-serif'],
-        body: ['Inter', 'system-ui', 'sans-serif'],
+        serif: ['"Source Serif 4"', 'Georgia', 'serif'],
+        sans: ['"IBM Plex Sans"', 'system-ui', '-apple-system', 'sans-serif'],
+        heading: ['"Source Serif 4"', 'Georgia', 'serif'],
+        body: ['"IBM Plex Sans"', 'system-ui', '-apple-system', 'sans-serif'],
       },
       colors: {
+        compliscan: {
+          navy: '#1B2A4A',
+          bg: '#F7F5F0',
+          gold: '#C9A227',
+          secondary: '#5C5C52',
+          border: '#E4E0D7',
+          card: '#FFFFFF',
+          compliant: {
+            DEFAULT: '#2F6844',
+            bg: '#EAF3ED',
+            text: '#1E472E',
+            border: '#BFE0CB',
+          },
+          flagged: {
+            DEFAULT: '#A13D2C',
+            bg: '#FCEBE9',
+            text: '#7A281A',
+            border: '#F2C2BC',
+          },
+          review: {
+            DEFAULT: '#B45309',
+            bg: '#FEF3C7',
+            text: '#92400E',
+            border: '#FDE68A',
+          },
+        },
         primary: {
           50: '#eff6ff',
           100: '#dbeafe',

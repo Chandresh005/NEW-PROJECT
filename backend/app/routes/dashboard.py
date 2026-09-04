@@ -1,39 +1,44 @@
 from datetime import datetime, timedelta, timezone
-from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required, get_jwt_identity
-from sqlalchemy import func
-from app import db
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import case, desc, func
+from sqlalchemy.orm import Session
+
+from app.auth import get_current_user
+from app.database import get_db
 from app.models import User, Scan
 
-dashboard_bp = Blueprint("dashboard", __name__)
+router = APIRouter(
+    prefix="/api/dashboard",
+    tags=["Dashboard"],
+)
 
 
-def require_officer_or_admin():
-    user_id = int(get_jwt_identity())
-    user = User.query.get(user_id)
-    if not user:
-        return None, (jsonify({"error": "User not found"}), 404)
-    if user.role not in ("admin", "officer"):
-        return None, (jsonify({"error": "Access denied. Admin or officer role required."}), 403)
-    return user, None
+def require_officer_or_admin(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role not in ("admin", "officer"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Admin or officer role required.",
+        )
+    return current_user
 
 
-@dashboard_bp.route("/stats", methods=["GET"])
-@jwt_required()
-def get_stats():
+@router.get("/stats")
+def get_stats(
+    current_user: User = Depends(require_officer_or_admin),
+    db: Session = Depends(get_db),
+):
     try:
-        user, error = require_officer_or_admin()
-        if error:
-            return error
-
-        total_scans = Scan.query.count()
-        compliant = Scan.query.filter_by(overall_status="compliant").count()
-        non_compliant = Scan.query.filter_by(overall_status="non_compliant").count()
-        partially_compliant = Scan.query.filter_by(overall_status="partially_compliant").count()
+        total_scans = db.query(Scan).count()
+        compliant = db.query(Scan).filter(Scan.overall_status == "compliant").count()
+        non_compliant = db.query(Scan).filter(Scan.overall_status == "non_compliant").count()
+        partially_compliant = db.query(Scan).filter(Scan.overall_status == "partially_compliant").count()
 
         seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
         recent_scans = (
-            Scan.query.filter(Scan.created_at >= seven_days_ago)
+            db.query(Scan)
+            .filter(Scan.created_at >= seven_days_ago)
             .order_by(Scan.created_at.desc())
             .limit(10)
             .all()
@@ -44,18 +49,18 @@ def get_stats():
             day = datetime.now(timezone.utc).date() - timedelta(days=i)
             day_start = datetime.combine(day, datetime.min.time()).replace(tzinfo=timezone.utc)
             day_end = day_start + timedelta(days=1)
-            count = Scan.query.filter(
-                Scan.created_at >= day_start, Scan.created_at < day_end
-            ).count()
+            count = (
+                db.query(Scan)
+                .filter(Scan.created_at >= day_start, Scan.created_at < day_end)
+                .count()
+            )
             scans_per_day.append({
                 "date": day.isoformat(),
                 "count": count,
             })
 
         violation_rows = (
-            db.session.query(
-                Scan.compliance_result,
-            )
+            db.query(Scan.compliance_result)
             .filter(Scan.compliance_result.isnot(None))
             .all()
         )
@@ -75,7 +80,7 @@ def get_stats():
             {"rule": rule, "count": count} for rule, count in top_violations
         ]
 
-        return jsonify({
+        return {
             "stats": {
                 "total_scans": total_scans,
                 "compliant": compliant,
@@ -85,84 +90,99 @@ def get_stats():
                 "scans_per_day": scans_per_day,
                 "top_violations": top_violations_list,
             }
-        }), 200
+        }
 
+    except HTTPException:
+        raise
     except Exception as e:
-        return jsonify({"error": f"Failed to fetch stats: {str(e)}"}), 500
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch stats: {str(e)}",
+        )
 
 
-@dashboard_bp.route("/scans", methods=["GET"])
-@jwt_required()
-def get_all_scans():
+@router.get("/scans")
+def get_all_scans(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    status: Optional[str] = None,
+    source: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    manufacturer: Optional[str] = None,
+    current_user: User = Depends(require_officer_or_admin),
+    db: Session = Depends(get_db),
+):
     try:
-        user, error = require_officer_or_admin()
-        if error:
-            return error
-
-        page = request.args.get("page", 1, type=int)
-        per_page = request.args.get("per_page", 20, type=int)
-        per_page = min(per_page, 100)
-
-        status = request.args.get("status")
-        source = request.args.get("source")
-        date_from = request.args.get("date_from")
-        date_to = request.args.get("date_to")
-        manufacturer = request.args.get("manufacturer")
-
-        query = Scan.query
+        query = db.query(Scan)
 
         if status:
-            query = query.filter_by(overall_status=status)
+            query = query.filter(Scan.overall_status == status)
         if source:
-            query = query.filter_by(source=source)
+            query = query.filter(Scan.source == source)
         if date_from:
             try:
                 df = datetime.fromisoformat(date_from).replace(tzinfo=timezone.utc)
                 query = query.filter(Scan.created_at >= df)
             except ValueError:
-                return jsonify({"error": "Invalid date_from format. Use ISO 8601."}), 400
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid date_from format. Use ISO 8601.",
+                )
         if date_to:
             try:
                 dt = datetime.fromisoformat(date_to).replace(tzinfo=timezone.utc)
                 query = query.filter(Scan.created_at <= dt)
             except ValueError:
-                return jsonify({"error": "Invalid date_to format. Use ISO 8601."}), 400
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid date_to format. Use ISO 8601.",
+                )
         if manufacturer:
             query = query.filter(
                 Scan.manufacturer.ilike(f"%{manufacturer}%")
             )
 
-        query = query.order_by(Scan.created_at.desc())
-        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        total_items = query.count()
+        total_pages = (total_items + per_page - 1) // per_page if total_items > 0 else 1
+        items = (
+            query.order_by(Scan.created_at.desc())
+            .offset((page - 1) * per_page)
+            .limit(per_page)
+            .all()
+        )
 
-        return jsonify({
-            "scans": [s.to_dict() for s in pagination.items],
+        return {
+            "scans": [s.to_dict() for s in items],
             "pagination": {
-                "page": pagination.page,
-                "per_page": pagination.per_page,
-                "total_pages": pagination.pages,
-                "total_items": pagination.total,
-            }
-        }), 200
+                "page": page,
+                "per_page": per_page,
+                "total_pages": total_pages,
+                "total_items": total_items,
+            },
+        }
 
+    except HTTPException:
+        raise
     except Exception as e:
-        return jsonify({"error": f"Failed to fetch scans: {str(e)}"}), 500
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch scans: {str(e)}",
+        )
 
 
-@dashboard_bp.route("/map", methods=["GET"])
-@jwt_required()
-def get_map_data():
+@router.get("/map")
+def get_map_data(
+    current_user: User = Depends(require_officer_or_admin),
+    db: Session = Depends(get_db),
+):
     try:
-        user, error = require_officer_or_admin()
-        if error:
-            return error
-
         state_rows = (
-            db.session.query(
+            db.query(
                 Scan.state,
                 func.count(Scan.id).label("total"),
-                func.sum(db.case((Scan.overall_status == "compliant", 1), else_=0)).label("compliant"),
-                func.sum(db.case((Scan.overall_status == "non_compliant", 1), else_=0)).label("non_compliant"),
+                func.sum(case((Scan.overall_status == "compliant", 1), else_=0)).label("compliant"),
+                func.sum(case((Scan.overall_status == "non_compliant", 1), else_=0)).label("non_compliant"),
             )
             .filter(Scan.state.isnot(None), Scan.state != "")
             .group_by(Scan.state)
@@ -171,52 +191,56 @@ def get_map_data():
 
         states = []
         for row in state_rows:
+            total = row.total or 0
+            comp = int(row.compliant or 0)
+            non_comp = int(row.non_compliant or 0)
             states.append({
                 "state": row.state,
-                "total": row.total,
-                "compliant": row.compliant or 0,
-                "non_compliant": row.non_compliant or 0,
-                "violation_rate": round((row.non_compliant or 0) / row.total * 100, 1),
+                "total": total,
+                "compliant": comp,
+                "non_compliant": non_comp,
+                "violation_rate": round((non_comp / total * 100), 1) if total > 0 else 0.0,
             })
 
-        return jsonify({"states": states}), 200
+        return {"states": states}
 
+    except HTTPException:
+        raise
     except Exception as e:
-        return jsonify({"error": f"Failed to fetch map data: {str(e)}"}), 500
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch map data: {str(e)}",
+        )
 
 
-@dashboard_bp.route("/alerts", methods=["GET"])
-@jwt_required()
-def get_repeat_offenders():
+@router.get("/alerts")
+def get_repeat_offenders(
+    limit: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(require_officer_or_admin),
+    db: Session = Depends(get_db),
+):
     try:
-        user, error = require_officer_or_admin()
-        if error:
-            return error
-
-        limit = request.args.get("limit", 20, type=int)
-        limit = min(limit, 100)
-
         gtin_rows = (
-            db.session.query(
+            db.query(
                 Scan.gtin,
                 Scan.product_name,
                 Scan.manufacturer,
                 func.count(Scan.id).label("total_scans"),
-                func.sum(db.case((Scan.overall_status == "non_compliant", 1), else_=0)).label("fail_count"),
+                func.sum(case((Scan.overall_status == "non_compliant", 1), else_=0)).label("fail_count"),
                 func.max(Scan.created_at).label("last_seen"),
             )
             .filter(Scan.gtin.isnot(None), Scan.gtin != "")
             .group_by(Scan.gtin, Scan.product_name, Scan.manufacturer)
             .having(func.count(Scan.id) > 1)
-            .order_by(db.desc("fail_count"))
+            .order_by(desc("fail_count"))
             .limit(limit)
             .all()
         )
 
         alerts = []
         for row in gtin_rows:
-            total = row.total_scans
-            fails = row.fail_count or 0
+            total = row.total_scans or 0
+            fails = int(row.fail_count or 0)
             risk_score = min(100, int((fails / total) * 100)) if total > 0 else 0
             alerts.append({
                 "gtin": row.gtin,
@@ -228,34 +252,41 @@ def get_repeat_offenders():
                 "last_seen": row.last_seen.isoformat() if row.last_seen else None,
             })
 
-        return jsonify({"alerts": alerts}), 200
+        return {"alerts": alerts}
 
+    except HTTPException:
+        raise
     except Exception as e:
-        return jsonify({"error": f"Failed to fetch alerts: {str(e)}"}), 500
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch alerts: {str(e)}",
+        )
 
 
-@dashboard_bp.route("/leads", methods=["GET"])
-@jwt_required()
-def get_citizen_leads():
+@router.get("/leads")
+def get_citizen_leads(
+    limit: int = Query(50, ge=1, le=100),
+    current_user: User = Depends(require_officer_or_admin),
+    db: Session = Depends(get_db),
+):
     try:
-        user, error = require_officer_or_admin()
-        if error:
-            return error
-
-        limit = request.args.get("limit", 50, type=int)
-
         leads = (
-            Scan.query
-            .filter_by(source="citizen")
+            db.query(Scan)
+            .filter(Scan.source == "citizen")
             .filter(Scan.overall_status.in_(["non_compliant", "partially_compliant"]))
             .order_by(Scan.created_at.desc())
             .limit(limit)
             .all()
         )
 
-        return jsonify({
+        return {
             "leads": [lead.to_dict() for lead in leads]
-        }), 200
+        }
 
+    except HTTPException:
+        raise
     except Exception as e:
-        return jsonify({"error": f"Failed to fetch leads: {str(e)}"}), 500
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch leads: {str(e)}",
+        )
