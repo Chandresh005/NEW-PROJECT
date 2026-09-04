@@ -10,8 +10,8 @@ Software System to check compliance of Packaged Commodities by scanning products
 ## Team Members
 1. M1 - Backend Lead
 2. M2 - Frontend Lead
-3. M3 - OCR Engineer
-4. M4 - Compliance Logic
+3. M3 - researcher
+4. M4 - Ai &ML
 5. M5 - UI/UX Designer
 6. M6 - Testing & Integration
 
@@ -158,4 +158,4 @@ curl -X POST http://localhost:8000/api/auth/register \
 - Week 2: Dashboard, reports, testing, demo prep
 
 ## Internal Demo Date
-Between 8 to 12 Sept
+14 sept
